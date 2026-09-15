@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Notepad</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#f7f4ee">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Notepad">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<style>
+  :root {
+    --bg: #f7f4ee;
+    --fg: #2b2b2b;
+    --toolbar-bg: #f7f4ee;
+    --border: #e0dcd2;
+    --muted: #9b968a;
+    --gutter-bg: #efece4;
+    --gutter-fg: #b3ada0;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang HK", sans-serif;
+    overscroll-behavior: none;
+  }
+  #app {
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #toolbar {
+    display: flex; align-items: center;
+    background: var(--toolbar-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 8px;
+    flex-shrink: 0;
+    gap: 2px;
+  }
+  #titleGroup {
+    display: flex; align-items: center; gap: 2px;
+    font-size: 18px; font-weight: 600;
+    padding: 6px 8px;
+    flex-shrink: 0;
+  }
+  #titleGroup .caret { font-size: 11px; color: var(--muted); margin-left: 2px; }
+  .icon-scroll {
+    display: flex; align-items: center; gap: 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+    justify-content: flex-start;
+  }
+  .icon-scroll::-webkit-scrollbar { display: none; }
+  .iconbtn {
+    background: none; border: none;
+    color: var(--fg); border-radius: 8px;
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    user-select: none;
+  }
+  .iconbtn:active { background: rgba(0,0,0,0.08); }
+  .iconbtn svg { width: 20px; height: 20px; }
+  #editorWrap {
+    flex: 1; display: flex; overflow: hidden; position: relative;
+    background: var(--bg);
+  }
+  #gutter {
+    background: var(--gutter-bg);
+    color: var(--gutter-fg);
+    font-family: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+    font-size: 14px; line-height: 1.75;
+    padding: 20px 8px 20px 12px;
+    text-align: right;
+    user-select: none;
+    overflow: hidden;
+    white-space: pre;
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+    min-width: 36px;
+  }
+  #editor {
+    flex: 1; width: 100%; height: 100%;
+    background: var(--bg); color: var(--fg);
+    border: none; outline: none; resize: none;
+    padding: 20px 22px; font-size: 15px; line-height: 1.75;
+    font-family: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+    -webkit-appearance: none;
+    white-space: pre;
+    overflow: auto;
+  }
+  #statusbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 16px; font-size: 11px; color: var(--muted);
+    background: var(--toolbar-bg);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 10px;
+  }
+  #statusbar span { white-space: nowrap; }
+  #fileInput { display: none; }
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4); z-index: 100;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff; border-radius: 14px;
+    padding: 22px; width: 100%; max-width: 380px;
+    border: 1px solid var(--border);
+    color: #2b2b2b;
+  }
+  .modal h3 { margin: 0 0 14px; font-size: 16px; }
+  .modal label { display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px; }
+  .modal label input[type=checkbox] { width:auto;margin:0; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
+  .modal .btn {
+    background: none; border: 1px solid var(--border);
+    color: #2b2b2b; border-radius: 8px;
+    padding: 9px 14px; font-size: 14px; cursor: pointer;
+  }
+  .modal .btn.accent { border-color: #2b2b2b; font-weight: 600; }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #2b2b2b; color: #fff; padding: 9px 18px; border-radius: 22px;
+    font-size: 13px; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 200;
+    max-width: 85vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div id="titleGroup">
+      <span>Notepad</span>
+      <span class="caret">▾</span>
+    </div>
+    <div class="icon-scroll">
+      <button class="iconbtn" id="btnNew" title="新增">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="iconbtn" id="btnDelete" title="刪除">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="iconbtn" id="btnSave" title="下載">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button class="iconbtn" id="btnOpen" title="打開">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button class="iconbtn" id="btnCopy" title="複製">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button class="iconbtn" id="btnSettings" title="設置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="iconbtn" id="btnShare" title="分享">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="editorWrap">
+    <div id="gutter">1</div>
+    <textarea id="editor" placeholder="開始輸入…" autofocus spellcheck="false"></textarea>
+  </div>
+  <div id="statusbar">
+    <span id="wordCount">0 字元 · 0 詞</span>
+    <span id="lineCount">1 行</span>
+    <span id="saveStatus">已保存</span>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".txt,.json,.html,.htm,.js,.css,.md,.xml,.csv,text/plain,application/json,text/html,text/javascript,text/css,text/markdown">
+
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3>設置</h3>
+    <label>
+      <input type="checkbox" id="typewriterToggle"> 打字機音效
+    </label>
+    <label>
+      <input type="checkbox" id="lineNumToggle" checked> 顯示行數
+    </label>
+    <div class="modal-actions">
+      <button class="btn accent" id="settingsClose">完成</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const editor = document.getElementById('editor');
+const gutter = document.getElementById('gutter');
+const wordCount = document.getElementById('wordCount');
+const lineCount = document.getElementById('lineCount');
+const saveStatus = document.getElementById('saveStatus');
+const toast = document.getElementById('toast');
+const filenameState = { name: 'untitled.txt' };
+
+const STORAGE_KEY = 'notepad-content';
+const STORAGE_FILENAME_KEY = 'notepad-filename';
+const STORAGE_TYPEWRITER = 'notepad-typewriter';
+const STORAGE_LINENUM = 'notepad-linenum';
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+function updateGutter() {
+  const lines = editor.value.split('\n').length;
+  let nums = '';
+  for (let i = 1; i <= lines; i++) nums += i + '\n';
+  gutter.textContent = nums.trim() ? nums : '1';
+  lineCount.textContent = lines + ' 行';
+}
+
+function syncGutterScroll() {
+  gutter.scrollTop = editor.scrollTop;
+}
+
+function updateWordCount() {
+  const text = editor.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  wordCount.textContent = `${chars} 字元 · ${words} 詞`;
+  updateGutter();
+}
+
+let saveTimer = null;
+function scheduleAutoSave() {
+  saveStatus.textContent = '保存中…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    localStorage.setItem(STORAGE_KEY, editor.value);
+    localStorage.setItem(STORAGE_FILENAME_KEY, filenameState.name);
+    saveStatus.textContent = '已保存 ' + new Date().toLocaleTimeString('zh-Hant', {hour:'2-digit', minute:'2-digit'});
+  }, 500);
+}
+
+let audioCtx = null;
+function playKeySound() {
+  if (localStorage.getItem(STORAGE_TYPEWRITER) !== '1') return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'square';
+  o.frequency.value = 600 + Math.random() * 200;
+  g.gain.setValueAtTime(0.05, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + 0.05);
+}
+
+editor.addEventListener('input', () => {
+  updateWordCount();
+  scheduleAutoSave();
+  playKeySound();
+});
+editor.addEventListener('scroll', syncGutterScroll);
+
+function applyLineNumVisibility(show) {
+  gutter.style.display = show ? 'block' : 'none';
+}
+
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  const savedName = localStorage.getItem(STORAGE_FILENAME_KEY);
+  if (saved !== null) editor.value = saved;
+  if (savedName) filenameState.name = savedName;
+  updateWordCount();
+  editor.focus();
+
+  if (localStorage.getItem(STORAGE_TYPEWRITER) === '1') {
+    document.getElementById('typewriterToggle').checked = true;
+  }
+  const lineNumOn = localStorage.getItem(STORAGE_LINENUM) !== '0';
+  document.getElementById('lineNumToggle').checked = lineNumOn;
+  applyLineNumVisibility(lineNumOn);
+});
+
+document.getElementById('btnNew').addEventListener('click', () => {
+  if (editor.value && !confirm('目前內容尚未清空，確定要新增空白筆記嗎？')) return;
+  editor.value = '';
+  filenameState.name = 'untitled.txt';
+  updateWordCount();
+  scheduleAutoSave();
+  showToast('已新增筆記');
+  editor.focus();
+});
+
+document.getElementById('btnDelete').addEventListener('click', () => {
+  if (!editor.value) { showToast('筆記已經是空的'); return; }
+  if (!confirm('確定要清空目前筆記內容嗎？')) return;
+  editor.value = '';
+  updateWordCount();
+  scheduleAutoSave();
+  showToast('已刪除內容');
+});
+
+function guessExtensionFromContent(text) {
+  const t = text.trim();
+  if (!t) return 'txt';
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try { JSON.parse(t); return 'json'; } catch (e) {}
+  }
+  if (/^<!DOCTYPE html>/i.test(t) || /<html[\s>]/i.test(t)) return 'html';
+  return null;
+}
+
+function resolveFilename() {
+  let name = filenameState.name || 'untitled.txt';
+  if (!/\.[a-zA-Z0-9]+$/.test(name)) {
+    const guessed = guessExtensionFromContent(editor.value);
+    name = name + '.' + (guessed || 'txt');
+  }
+  return name;
+}
+
+function mimeForFilename(name) {
+  const mimeMap = { json: 'application/json', html: 'text/html', htm: 'text/html', js: 'text/javascript', css: 'text/css', md: 'text/markdown', xml: 'application/xml', csv: 'text/csv' };
+  const ext = (name.split('.').pop() || 'txt').toLowerCase();
+  return mimeMap[ext] || 'text/plain';
+}
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  const name = resolveFilename();
+  const mime = mimeForFilename(name);
+  const blob = new Blob([editor.value], {type: mime + ';charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('已下載 ' + name);
+});
+
+const fileInput = document.getElementById('fileInput');
+document.getElementById('btnOpen').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    editor.value = ev.target.result;
+    filenameState.name = file.name;
+    updateWordCount();
+    scheduleAutoSave();
+    showToast('已打開 ' + file.name);
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+document.getElementById('btnCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(editor.value);
+    showToast('已複製到剪貼簿');
+  } catch (err) {
+    showToast('複製失敗');
+  }
+});
+
+const settingsModal = document.getElementById('settingsModal');
+document.getElementById('btnSettings').addEventListener('click', () => settingsModal.classList.add('open'));
+document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('open'));
+
+document.getElementById('typewriterToggle').addEventListener('change', (e) => {
+  localStorage.setItem(STORAGE_TYPEWRITER, e.target.checked ? '1' : '0');
+});
+document.getElementById('lineNumToggle').addEventListener('change', (e) => {
+  localStorage.setItem(STORAGE_LINENUM, e.target.checked ? '1' : '0');
+  applyLineNumVisibility(e.target.checked);
+});
+
+/* ---------- 檔案分享（Web Share API） ---------- */
+document.getElementById('btnShare').addEventListener('click', async () => {
+  if (!editor.value.trim()) { showToast('內容是空的，沒什麼可分享'); return; }
+  const name = resolveFilename();
+  const mime = mimeForFilename(name);
+  const file = new File([editor.value], name, { type: mime });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: name,
+      });
+      showToast('已開啟分享');
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('分享失敗：' + err.message);
+    }
+    return;
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: name, text: editor.value });
+      showToast('已開啟分享（純文字）');
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('分享失敗：' + err.message);
+    }
+    return;
+  }
+
+  showToast('此瀏覽器不支援分享，已改為下載');
+  document.getElementById('btnSave').click();
+});
+
+document.addEventListener('keydown', (e) => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.key === 's') {
+    e.preventDefault();
+    document.getElementById('btnSave').click();
+  } else if (ctrl && e.key === 'n') {
+    e.preventDefault();
+    document.getElementById('btnNew').click();
+  } else if (ctrl && e.key === 'o') {
+    e.preventDefault();
+    document.getElementById('btnOpen').click();
+  }
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
